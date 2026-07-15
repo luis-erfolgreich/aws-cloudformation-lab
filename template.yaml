@@ -1,0 +1,143 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Template CloudFormation desenvolvido para demonstrar o provisionamento
+  de infraestrutura básica na AWS utilizando Infrastructure as Code (IaC).
+
+Parameters:
+
+  VPCCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: Faixa CIDR da VPC
+
+  PublicSubnetCidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: Faixa CIDR da Subnet Pública
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+
+  AmazonLinuxAMIID:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+
+Resources:
+
+  LabVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+      Tags:
+        - Key: Name
+          Value: Lab-VPC
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref PublicSubnetCidr
+      MapPublicIpOnLaunch: true
+
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+
+      Tags:
+        - Key: Name
+          Value: Public-Subnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref LabVPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVPC
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group da aplicação
+      VpcId: !Ref LabVPC
+
+      SecurityGroupIngress:
+
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: App-SG
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+
+  AppServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmazonLinuxAMIID
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet
+
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+
+      Tags:
+        - Key: Name
+          Value: App-Server
+
+Outputs:
+
+  VPC:
+    Description: VPC criada
+    Value: !Ref LabVPC
+
+  PublicSubnet:
+    Description: Subnet Pública criada
+    Value: !Ref PublicSubnet
+
+  SecurityGroup:
+    Description: Security Group criado
+    Value: !Ref AppSecurityGroup
+
+  EC2Instance:
+    Description: Instância EC2 criada
+    Value: !Ref AppServer
+
+  Bucket:
+    Description: Bucket S3 criado
+    Value: !Ref S3Bucket
